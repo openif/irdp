@@ -1,0 +1,15 @@
+{
+  "name": "rdp-client",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "rdp_client_bg.wasm",
+    "rdp_client.js",
+    "rdp_client.d.ts"
+  ],
+  "main": "rdp_client.js",
+  "types": "rdp_client.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

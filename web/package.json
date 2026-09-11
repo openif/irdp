@@ -1,0 +1,12 @@
+{
+    "name": "irdp-web",
+    "version": "1.0.0",
+    "description": "Web client and proxy server for IRDP",
+    "scripts": {
+        "start": "node server.js"
+    },
+    "dependencies": {
+        "express": "^4.21.0",
+        "express-ws": "^5.0.2"
+    }
+}

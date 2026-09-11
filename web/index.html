@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IRDP Web Client</title>
+    <link rel="stylesheet" href="style.css">
+    <script>
+        // Synchronous check to prevent login card flashing upon page refresh
+        try {
+            if (sessionStorage.getItem('ironrdp_active_session') === '1') {
+                document.documentElement.classList.add('session-reconnecting');
+            }
+        } catch (_) {}
+    </script>
+</head>
+<body>
+    <div class="ambient-glow"></div>
+
+    <!-- ── Reconnecting Loading Overlay ── -->
+    <div id="loading-screen">
+        <div class="loading-box">
+            <div class="brand-icon" style="margin-bottom: 8px;">🖥️</div>
+            <div class="spinner-ring"></div>
+            <div class="loading-title">Reconnecting Desktop...</div>
+            <div class="loading-desc">Restoring your remote session seamlessly</div>
+            <button id="cancel-reconnect-btn" class="btn-cancel-reconnect">Cancel</button>
+        </div>
+    </div>
+
+    <!-- ── 1. Hero Login Center Card ── -->
+    <div id="login-screen">
+        <div class="login-card">
+            <div class="brand-header">
+                <div class="brand-badge"><span>⚡ WebAssembly Remote Desktop</span></div>
+                <div class="brand-icon">🖥️</div>
+                <h1 class="brand-title">IRDP</h1>
+                <p class="brand-sub">Fast, secure & private remote desktop in your browser</p>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group" style="flex: 2.8;">
+                    <label class="form-label" for="host">RDP Server Host</label>
+                    <input type="text" id="host" class="input-box" placeholder="e.g. 192.168.1.100 or ddns.net" value="" spellcheck="false" autocomplete="on">
+                </div>
+                <div class="form-group" style="flex: 1.2;">
+                    <label class="form-label" for="port">Port</label>
+                    <input type="number" id="port" class="input-box" placeholder="3389" value="3389" min="1" max="65535">
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label" for="username">Username</label>
+                    <input type="text" id="username" class="input-box" value="" spellcheck="false" autocomplete="on">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="password">Password</label>
+                    <input type="password" id="password" class="input-box" value="" autocomplete="current-password">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="resolution">Resolution</label>
+                <select id="resolution" class="select-box">
+                    <option value="fit" selected>Fit Window (Auto Adaptive)</option>
+                    <option value="1920x1080">1920 × 1080 (1080P Full HD)</option>
+                    <option value="2560x1440">2560 × 1440 (2K QHD)</option>
+                    <option value="3840x2160">3840 × 2160 (4K UHD)</option>
+                    <option value="1366x768">1366 × 768 (Laptop)</option>
+                    <option value="1280x720">1280 × 720 (720P HD)</option>
+                    <option value="custom">⚙️ Custom Resolution...</option>
+                </select>
+                <div id="custom-res-row" class="custom-res-row hidden">
+                    <input type="number" id="custom-w" class="input-box" placeholder="Width (e.g. 1600)" value="1600" min="640" max="7680" step="2">
+                    <span style="color: var(--text-dim);">×</span>
+                    <input type="number" id="custom-h" class="input-box" placeholder="Height (e.g. 900)" value="900" min="480" max="4320" step="2">
+                </div>
+            </div>
+
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-muted); cursor: pointer;">
+                    <input type="checkbox" id="remember-pass" style="accent-color: var(--primary); width: 15px; height: 15px; cursor: pointer;">
+                    <span>Remember password on this device</span>
+                </label>
+            </div>
+
+            <button id="connect-btn" class="btn-primary">
+                <span>Connect Desktop</span>
+                <span style="font-size: 16px;">→</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- ── 2. Fullscreen Remote Desktop Canvas ── -->
+    <div id="canvas-container">
+        <canvas id="rdp-screen" width="1280" height="720" tabindex="0"></canvas>
+    </div>
+
+    <!-- ── 3. Floating Capsule Control Bar (Only when Connected) ── -->
+    <div id="floating-bar" class="hidden">
+        <div id="status-badge" class="capsule-badge connecting">
+            <span class="status-dot"></span>
+            <span id="status-text">Connecting</span>
+        </div>
+        <div class="capsule-divider"></div>
+        <button id="btn-cad" class="capsule-btn" title="Send Ctrl+Alt+Del (Unlock / Task Manager)" style="font-size: 12px; font-weight: 700; width: auto; padding: 0 8px; border-radius: 12px;">CAD</button>
+        <button id="btn-toggle-ft" class="capsule-btn" title="File Transfer">📁</button>
+        <button id="btn-toggle-log" class="capsule-btn" title="Debug Log Console">📋</button>
+        <button id="btn-settings" class="capsule-btn" title="Display & Settings">⚙️</button>
+        <button id="fullscreen-btn" class="capsule-btn" title="Toggle Fullscreen">⛶</button>
+        <div class="capsule-divider"></div>
+        <button id="disconnect-btn" class="capsule-btn btn-disconnect" title="Disconnect Session">✕</button>
+    </div>
+
+    <!-- ── 4. Settings Modal Dialog ── -->
+    <div id="settings-modal" class="modal-overlay">
+        <div class="modal-card">
+            <div class="modal-header">
+                <div class="modal-title">⚙️ Session Settings</div>
+                <button id="settings-close" class="modal-close">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="setting-item">
+                    <div class="setting-info">
+                        <div class="setting-title">📁 File Transfer Drawer</div>
+                        <div class="setting-desc">Toggle the drag & drop file upload / download panel</div>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="toggle-ft-switch">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+
+                <div class="setting-item">
+                    <div class="setting-info">
+                        <div class="setting-title">📋 Debug Log Console</div>
+                        <div class="setting-desc">Show real-time RDP PDU logs and connection diagnostics</div>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="toggle-log-switch">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+
+                <div class="setting-item" style="flex-direction: column; align-items: stretch; gap: 8px;">
+                    <div class="setting-info">
+                        <div class="setting-title">🖥️ Desktop Resolution</div>
+                        <div class="setting-desc">Switch remote desktop resolution dynamically in real-time</div>
+                    </div>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <select id="modal-resolution" class="select-box" style="flex: 1;">
+                            <option value="fit">Fit Window (Auto Adaptive)</option>
+                            <option value="1920x1080">1920 × 1080 (1080P Full HD)</option>
+                            <option value="2560x1440">2560 × 1440 (2K QHD)</option>
+                            <option value="3840x2160">3840 × 2160 (4K UHD)</option>
+                            <option value="1366x768">1366 × 768 (Laptop)</option>
+                            <option value="1280x720">1280 × 720 (720P HD)</option>
+                            <option value="custom">⚙️ Custom Resolution...</option>
+                        </select>
+                        <button id="btn-apply-res" class="btn-primary" style="width: auto; padding: 10px 18px; font-size: 13px; white-space: nowrap;">Apply</button>
+                    </div>
+                    <div id="modal-custom-res-row" class="custom-res-row hidden" style="margin-top: 4px;">
+                        <input type="number" id="modal-custom-w" class="input-box" placeholder="Width" value="1600" min="640" max="7680" step="2">
+                        <span style="color: var(--text-dim);">×</span>
+                        <input type="number" id="modal-custom-h" class="input-box" placeholder="Height" value="900" min="480" max="4320" step="2">
+                    </div>
+                </div>
+
+                <div class="setting-item">
+                    <div class="setting-info">
+                        <div class="setting-title">🔍 Canvas Contain Fit</div>
+                        <div class="setting-desc">Scale Canvas smoothly within current browser viewport</div>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="toggle-stretch-switch" checked>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── 5. Disconnect Confirmation Modal ── -->
+    <div id="confirm-modal" class="modal-overlay">
+        <div class="modal-card" style="max-width: 390px;">
+            <div class="modal-header">
+                <div class="modal-title">
+                    <span style="font-size: 15px;">⚠️</span>
+                    <span>Disconnect Session</span>
+                </div>
+                <button id="confirm-close-btn" class="modal-close">×</button>
+            </div>
+            <div class="modal-body" style="padding: 20px;">
+                <p style="font-size: 13.5px; color: var(--text-muted); line-height: 1.6; margin-bottom: 22px;">
+                    Are you sure you want to disconnect from this remote desktop session?<br>
+                    <span style="font-size: 12px; color: var(--text-dim);">确定要退出并断开当前的远程桌面连接吗？</span>
+                </p>
+                <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                    <button id="confirm-cancel-btn" class="btn-cancel-modal">Cancel / 取消</button>
+                    <button id="confirm-ok-btn" class="btn-disconnect-modal">Disconnect / 确认退出</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── 6. File Transfer Floating Panel ── -->
+    <div id="file-transfer-panel">
+        <div class="ft-header">
+            <h3>📁 File Transfer</h3>
+            <div class="ft-actions">
+                <button class="ft-btn" id="upload-btn" disabled>Upload Files</button>
+                <button class="ft-btn primary" id="download-btn" disabled>Download</button>
+                <button class="ft-btn" id="ft-close-btn" style="padding: 2px 6px;">×</button>
+                <input type="file" id="file-input" multiple style="display: none;">
+            </div>
+        </div>
+        <div class="ft-drop-zone" id="drop-zone">
+            Drag & drop files here to upload to remote Windows desktop
+        </div>
+        <div id="file-list"></div>
+    </div>
+
+    <!-- ── 6. Debug Log Console ── -->
+    <div id="log-panel">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 4px;">
+            <span style="color: var(--text-dim); font-size: 10px; font-weight: 600;">TERMINAL LOG</span>
+            <button id="log-close-btn" style="background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 14px;">×</button>
+        </div>
+        <div id="log-entries"></div>
+    </div>
+
+    <script type="module">
+        import init, {
+            setup,
+            SessionBuilder,
+            DesktopSize,
+            InputTransaction,
+            DeviceEvent,
+            Extension,
+            ClipboardData,
+        } from '../pkg/rdp_client.js';
+
+        import { createLogger } from './lib/logger.js';
+        import { createSessionManager } from './lib/session.js';
+
+        // DOM elements
+        const loginScreen = document.getElementById('login-screen');
+        const floatingBar = document.getElementById('floating-bar');
+        const statusBadge = document.getElementById('status-badge');
+        const statusText = document.getElementById('status-text');
+        const logPanel = document.getElementById('log-panel');
+        const logEntriesEl = document.getElementById('log-entries');
+        const connectBtn = document.getElementById('connect-btn');
+        const disconnectBtn = document.getElementById('disconnect-btn');
+        const fullscreenBtn = document.getElementById('fullscreen-btn');
+        const hostInput = document.getElementById('host');
+        const portInput = document.getElementById('port');
+        const usernameInput = document.getElementById('username');
+        const passwordInput = document.getElementById('password');
+        const resolutionSelect = document.getElementById('resolution');
+        const customResRow = document.getElementById('custom-res-row');
+        const customWidthInput = document.getElementById('custom-w');
+        const customHeightInput = document.getElementById('custom-h');
+
+        const canvas = document.getElementById('rdp-screen');
+        const canvasContainer = document.getElementById('canvas-container');
+        const fileTransferPanel = document.getElementById('file-transfer-panel');
+        const uploadBtn = document.getElementById('upload-btn');
+        const downloadBtn = document.getElementById('download-btn');
+        const fileInput = document.getElementById('file-input');
+        const dropZone = document.getElementById('drop-zone');
+        const fileListEl = document.getElementById('file-list');
+
+        const btnToggleFt = document.getElementById('btn-toggle-ft');
+        const btnToggleLog = document.getElementById('btn-toggle-log');
+        const btnSettings = document.getElementById('btn-settings');
+        const ftCloseBtn = document.getElementById('ft-close-btn');
+        const logCloseBtn = document.getElementById('log-close-btn');
+
+        const settingsModal = document.getElementById('settings-modal');
+        const settingsClose = document.getElementById('settings-close');
+        const toggleFtSwitch = document.getElementById('toggle-ft-switch');
+        const toggleLogSwitch = document.getElementById('toggle-log-switch');
+        const toggleStretchSwitch = document.getElementById('toggle-stretch-switch');
+        const modalResolution = document.getElementById('modal-resolution');
+        const modalCustomResRow = document.getElementById('modal-custom-res-row');
+        const modalCustomW = document.getElementById('modal-custom-w');
+        const modalCustomH = document.getElementById('modal-custom-h');
+        const btnApplyRes = document.getElementById('btn-apply-res');
+
+        const rememberPassCheckbox = document.getElementById('remember-pass');
+        const btnCad = document.getElementById('btn-cad');
+
+        // Sync resolution UI elements
+        function syncResolutionUI(val) {
+            resolutionSelect.value = val;
+            if (modalResolution) modalResolution.value = val;
+            if (val === 'custom') {
+                customResRow.classList.remove('hidden');
+                if (modalCustomResRow) modalCustomResRow.classList.remove('hidden');
+            } else {
+                customResRow.classList.add('hidden');
+                if (modalCustomResRow) modalCustomResRow.classList.add('hidden');
+            }
+        }
+
+        // Restore saved settings
+        if (localStorage.getItem('ironrdp_host')) hostInput.value = localStorage.getItem('ironrdp_host');
+        if (localStorage.getItem('ironrdp_port')) portInput.value = localStorage.getItem('ironrdp_port');
+        if (localStorage.getItem('ironrdp_username')) usernameInput.value = localStorage.getItem('ironrdp_username');
+        if (localStorage.getItem('ironrdp_remember_pass') === '1') {
+            rememberPassCheckbox.checked = true;
+            if (localStorage.getItem('ironrdp_password')) {
+                passwordInput.value = localStorage.getItem('ironrdp_password');
+            }
+        }
+        if (localStorage.getItem('ironrdp_resolution')) {
+            syncResolutionUI(localStorage.getItem('ironrdp_resolution'));
+        }
+        if (localStorage.getItem('ironrdp_custom_w')) {
+            customWidthInput.value = localStorage.getItem('ironrdp_custom_w');
+            modalCustomW.value = localStorage.getItem('ironrdp_custom_w');
+        }
+        if (localStorage.getItem('ironrdp_custom_h')) {
+            customHeightInput.value = localStorage.getItem('ironrdp_custom_h');
+            modalCustomH.value = localStorage.getItem('ironrdp_custom_h');
+        }
+
+        // Resolution selector changes
+        resolutionSelect.addEventListener('change', () => {
+            syncResolutionUI(resolutionSelect.value);
+            if (resolutionSelect.value === 'custom') customWidthInput.focus();
+        });
+
+        if (modalResolution) {
+            modalResolution.addEventListener('change', () => {
+                syncResolutionUI(modalResolution.value);
+                if (modalResolution.value === 'custom') modalCustomW.focus();
+            });
+        }
+
+        modalCustomW.addEventListener('input', () => { customWidthInput.value = modalCustomW.value; });
+        modalCustomH.addEventListener('input', () => { customHeightInput.value = modalCustomH.value; });
+        customWidthInput.addEventListener('input', () => { modalCustomW.value = customWidthInput.value; });
+        customHeightInput.addEventListener('input', () => { modalCustomH.value = customHeightInput.value; });
+
+        // Logger setup
+        const { log, setStatus, formatError } = createLogger(logEntriesEl, statusText);
+
+        const confirmModal = document.getElementById('confirm-modal');
+        const confirmCloseBtn = document.getElementById('confirm-close-btn');
+        const confirmCancelBtn = document.getElementById('confirm-cancel-btn');
+        const confirmOkBtn = document.getElementById('confirm-ok-btn');
+
+        // Check if settings modal or any dialog is currently active to suppress Canvas key events
+        const isInputSuppressed = () => {
+            return settingsModal.classList.contains('visible') || confirmModal.classList.contains('visible');
+        };
+
+        // Session manager
+        const sessionManager = createSessionManager({
+            canvas, statusBadge, statusText, connectBtn, disconnectBtn, fileTransferPanel,
+            uploadBtn, downloadBtn, fileInput, dropZone, fileListEl,
+            hostInput, portInput, usernameInput, passwordInput, rememberPassCheckbox, resolutionSelect, customWidthInput, customHeightInput,
+            loginScreen, floatingBar, isInputSuppressed,
+            SessionBuilder, DesktopSize, Extension, DeviceEvent, InputTransaction, ClipboardData,
+            init, setup, log, setStatus, formatError
+        });
+
+        function showConfirmModal() {
+            confirmModal.classList.add('visible');
+        }
+        function hideConfirmModal() {
+            confirmModal.classList.remove('visible');
+        }
+
+        connectBtn.addEventListener('click', sessionManager.connect);
+        disconnectBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            showConfirmModal();
+        });
+        confirmCancelBtn.addEventListener('click', hideConfirmModal);
+        confirmCloseBtn.addEventListener('click', hideConfirmModal);
+        confirmModal.addEventListener('click', (e) => {
+            if (e.target === confirmModal) hideConfirmModal();
+        });
+        confirmOkBtn.addEventListener('click', () => {
+            hideConfirmModal();
+            sessionManager.disconnect();
+        });
+
+        btnCad.addEventListener('click', sessionManager.triggerCAD);
+
+        // Apply Resolution from Settings Modal
+        btnApplyRes.addEventListener('click', () => {
+            const mode = modalResolution.value;
+            const cw = modalCustomW.value;
+            const ch = modalCustomH.value;
+            sessionManager.applyResolution(mode, cw, ch);
+            settingsModal.classList.remove('visible');
+        });
+
+        // Window resize auto-adaptation in 'fit' mode
+        let resizeDebounce = null;
+        window.addEventListener('resize', () => {
+            if (sessionManager.getSession() && resolutionSelect.value === 'fit') {
+                clearTimeout(resizeDebounce);
+                resizeDebounce = setTimeout(() => {
+                    sessionManager.applyResolution('fit');
+                }, 250);
+            }
+        });
+
+        [hostInput, portInput, usernameInput, passwordInput, customWidthInput, customHeightInput].forEach(el => {
+            el.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !connectBtn.disabled) sessionManager.connect();
+            });
+        });
+
+        // Fullscreen toggle
+        fullscreenBtn.addEventListener('click', () => {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(() => {});
+            } else {
+                document.exitFullscreen().catch(() => {});
+            }
+        });
+
+        // UI Panel toggles
+        function setFtVisible(visible) {
+            fileTransferPanel.classList.toggle('visible', visible);
+            btnToggleFt.classList.toggle('active', visible);
+            toggleFtSwitch.checked = visible;
+        }
+
+        function setLogVisible(visible) {
+            logPanel.classList.toggle('visible', visible);
+            btnToggleLog.classList.toggle('active', visible);
+            toggleLogSwitch.checked = visible;
+        }
+
+        btnToggleFt.addEventListener('click', () => setFtVisible(!fileTransferPanel.classList.contains('visible')));
+        btnToggleLog.addEventListener('click', () => setLogVisible(!logPanel.classList.contains('visible')));
+        ftCloseBtn.addEventListener('click', () => setFtVisible(false));
+        logCloseBtn.addEventListener('click', () => setLogVisible(false));
+
+        toggleFtSwitch.addEventListener('change', (e) => setFtVisible(e.target.checked));
+        toggleLogSwitch.addEventListener('change', (e) => setLogVisible(e.target.checked));
+
+        // Settings Modal
+        btnSettings.addEventListener('click', () => {
+            syncResolutionUI(resolutionSelect.value);
+            settingsModal.classList.add('visible');
+        });
+        settingsClose.addEventListener('click', () => settingsModal.classList.remove('visible'));
+        settingsModal.addEventListener('click', (e) => {
+            if (e.target === settingsModal) settingsModal.classList.remove('visible');
+        });
+
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                if (confirmModal.classList.contains('visible')) hideConfirmModal();
+                if (settingsModal.classList.contains('visible')) settingsModal.classList.remove('visible');
+            }
+        });
+
+        // Stretch fit toggle
+        toggleStretchSwitch.addEventListener('change', (e) => {
+            if (e.target.checked) {
+                canvasContainer.classList.remove('original-size');
+                canvas.style.maxWidth = '100vw';
+                canvas.style.maxHeight = '100vh';
+                canvas.style.objectFit = 'contain';
+            } else {
+                canvasContainer.classList.add('original-size');
+                canvas.style.maxWidth = 'none';
+                canvas.style.maxHeight = 'none';
+            }
+        });
+
+        // Auto-reconnect if session was active before browser refresh
+        if (sessionStorage.getItem('ironrdp_active_session') === '1') {
+            const sHost = sessionStorage.getItem('ironrdp_session_host');
+            const sPort = sessionStorage.getItem('ironrdp_session_port');
+            const sUser = sessionStorage.getItem('ironrdp_session_user');
+            const sPass = sessionStorage.getItem('ironrdp_session_pass');
+            const sRes = sessionStorage.getItem('ironrdp_session_res');
+            const sCw = sessionStorage.getItem('ironrdp_session_cw');
+            const sCh = sessionStorage.getItem('ironrdp_session_ch');
+
+            if (sHost) hostInput.value = sHost;
+            if (sPort) portInput.value = sPort;
+            if (sUser) usernameInput.value = sUser;
+            if (sPass) passwordInput.value = sPass;
+            if (sRes) syncResolutionUI(sRes);
+            if (sCw) { customWidthInput.value = sCw; modalCustomW.value = sCw; }
+            if (sCh) { customHeightInput.value = sCh; modalCustomH.value = sCh; }
+
+            if (sHost) {
+                log('Browser refreshed: Reconnecting remote desktop session...', 'info');
+                setTimeout(() => {
+                    sessionManager.connect().catch((err) => {
+                        console.warn('Auto-reconnect on refresh failed:', err);
+                        document.documentElement.classList.remove('session-reconnecting');
+                    });
+                }, 100);
+            }
+        }
+
+        const cancelReconnectBtn = document.getElementById('cancel-reconnect-btn');
+        if (cancelReconnectBtn) {
+            cancelReconnectBtn.addEventListener('click', () => {
+                sessionStorage.removeItem('ironrdp_active_session');
+                sessionStorage.removeItem('ironrdp_session_pass');
+                document.documentElement.classList.remove('session-reconnecting');
+                sessionManager.cleanup(true);
+            });
+        }
+
+        log('IronRDP Client ready. Configure and click Connect.');
+    </script>
+</body>
+</html>

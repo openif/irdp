@@ -1,0 +1,42 @@
+{
+  "name": "irdp",
+  "version": "1.0.0",
+  "description": "WebAssembly Remote Desktop (IRDP)",
+  "keywords": [
+    "rdp",
+    "ironrdp",
+    "wasm",
+    "webassembly",
+    "js",
+    "remote-desktop",
+    "rdp-client"
+  ],
+  "homepage": "https://github.com/openif/irdp#readme",
+  "bugs": {
+    "url": "https://github.com/openif/irdp/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/openif/irdp.git"
+  },
+  "license": "MIT",
+  "author": "Marc-André Moreau",
+  "type": "module",
+  "main": "pkg/rdp_client.js",
+  "module": "pkg/rdp_client.js",
+  "types": "pkg/rdp_client.d.ts",
+  "exports": {
+    ".": {
+      "import": "./pkg/rdp_client.js",
+      "require": "./pkg/rdp_client.js",
+      "types": "./pkg/rdp_client.d.ts"
+    }
+  },
+  "files": [
+    "pkg",
+    "web"
+  ],
+  "scripts": {
+    "start": "cd web && node server.js"
+  }
+}

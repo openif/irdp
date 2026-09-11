@@ -1,0 +1,14 @@
+version: "3"
+services:
+  ironrdp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ironrdp-wasm
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - NODE_ENV=production
+      # - ALLOWED_HOSTS=example.com,.example.com   # (Optional) Restrict web access to specific domains
+      # - ALLOW_PRIVATE_TARGETS=true               # (Optional) Allow connecting to internal LAN IPs (192.168.x.x)
